@@ -3,35 +3,22 @@ const bodyParser=require('body-parser')
 const app=express();
 const bcrypt=require('bcrypt-nodejs');
 const cors=require('cors');
+var knex = require('knex')({
+  client: 'pg',
+  connection: {
+    host : '127.0.0.1',
+    user : 'postgres',
+    password : 'Wanted98wanted',
+    database : 'smart-brain'
+  }
+});
+knex.select('*').from('users')
+.then(data=>console.log(data))
+
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cors());
-const database=[
-   {
-   	id:'1',
-   	name:'sina',
-   	email:'sinamoraddar@gmail.com',
-   	password:"12345678",
-   	entries:0,
-   	joined:new Date()
-   },
-   {
-   	id:'2',
-   	name:'abbas',
-   	email:'abbas@gmail.com',
-   	password:'12345678',
-   	entries:0,
-   	joined:new Date()
-   },
-   {
-   	id:'3',
-   	name:'gholam',
-   	email:'gholam@gmail.com',
-   	password:'12345678',
-   	entries:0,
-   	joined:new Date()
-   },
-]
+
 
 app.get('/',(req,res)=>{
 res.json(database)
@@ -44,59 +31,98 @@ app.post("/signin",(req,res)=>{
 // bcrypt.compare("veggies", hash, function(err, res) {
 //     // res = false
 // });
-console.log(req.body)
-	if(req.body.email==database[0].email&&
-		req.body.password==database[0].password){
-		res.json(database[0]);
-	}else {
-		res.status(400).json('error logging in');
-	}
+// console.log(req.body)
+// 	if(req.body.email==database[0].email&&
+// 		req.body.password==database[0].password){
+// 		res.json(database[0]);
+// 	}else {
+// 		res.status(400).json('error logging in');
+// 	}
 // res.send('signing in')
+const{email,password}=req.body;
+knex.select('email','hash')
+	.from('login')
+	.where({email:email})
+	.then(response=>{
+		 if(bcrypt.compareSync(password, response[0].hash))
+		{return	knex.select('*')
+			.from('users')
+			.where({email:email})
+			.then(user=>
+				{	console.log('users',user[0])
+					res.json(user[0])}
+				).catch(()=>res.status(400).json("unable to get user"))
+		}else{
+			res.status(400).json("username or/and password was/were wrong")
+		}
+
+}).catch(()=>res.status(400).json("username or/and password was/were wrong"))
+
 })
 app.post('/register',(req,res)=>{
-// 	bcrypt.hash(req.body.password, null, null, function(err, hash) {
-// 		console.log(hash)
-// });
-       database.push({
-       		id:(Number(database[database.length-1].id)+1).toString(),
-   	name:req.body.name,
-   	email:req.body.eamil,
-   	// password:req.body.password,
-   	entries:0,
-   	joined:new Date()
-       });
-       res.json(database[database.length-1])
+const {name,email,password}=req.body;
+const hash = bcrypt.hashSync(password);
+
+// bcrypt.compareSync("bacon", hash); // true
+// bcrypt.compareSync("veggies", hash); // fals
+knex.transaction(trx=>{
+	trx.insert({
+		hash:hash,
+		email:email
+	})
+	.into('login')
+	.returning('email')
+	.then(loginEmail=>{
+		return trx('users')
+       .returning('*')
+       .insert({
+       	name:name,
+       	email:loginEmail[0],
+       	joined:new Date()
+       })
+       .then(user=>
+        res.json(user[0]))
+
+	})
+	.then(trx.commit)
+    .catch(trx.rollback)
+	})
+	.catch(err=>res.status(400).json('we were unable to register you for some funny reason'));
+     
+       
+      
 });
 app.get('/profile/:id',(req,res)=>{
 	const {id}=req.params;
-	let found=false;
-	database.forEach(
-    (user)=>{
-    	if(user.id===id){
-    		found=true;
-    	return	res.json(user)
-    	}
-    });
-    if(!found){
-    	res.status(404).send('user was not found');
-    }
+	knex.select('*').from('users').where('id','=',id).then(user=>{
+		if(user.length)
+		{res.json(user[0])}
+	else{
+		res.status(400).send('user was not found')
+	}
+	})
+	.catch(()=>res.status(400).send('error getting the user'));
+	
+    
+    
 });
 app.put('/image',(req,res)=>{
-	console.log(req.body)
 	const {id}=req.body;
-	let found=false;
-	database.forEach(
-    (user)=>{
-    	if(user.id===id){
-    		found=true;
-    		user.entries++;
-    	return	res.json(user.entries)
-    	}
-    	if(!found){
-    	res.status(404).send('user was not found');
-    }
-    });
+	knex('users')
+	.where({id:id})
+	.increment('entries',1)
+	.returning('entries')
+   	.then(entries=>
+   		{
+if(entries.length)
+{res.json(entries[0])}
 
+else{
+	res.status(400).json('user was not found')
+}
+   			
+   		})
+   	.catch(()=>res.status(400).json('couldn\'t handle the request'))
 })
 app.listen(3001,()=>{
 	console.log('app is running on port 3001')
