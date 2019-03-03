@@ -24,7 +24,7 @@ app.use(cors());
 
 
 app.get('/',(req,res)=>{
-res.json('')
+res.json('it is working')
 })
 app.post("/signin",signin.handleSignin(knex,bcrypt));
 app.post('/register',(req,res)=>register.handleRegister(req,res,knex,bcrypt));
